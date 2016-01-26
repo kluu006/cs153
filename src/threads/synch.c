@@ -100,6 +100,17 @@ sema_try_down (struct semaphore *sema)
 
   return success;
 }
+bool
+prior_compare (const struct list_elem *a,
+                        const struct list_elem *b,
+			void *aux UNUSED) 
+{
+	struct thread *at = list_entry(a, struct thread, elem);
+	struct thread *bt = list_entry(b, struct thread, elem);
+	if(get_priority(at, 8) < get_priority(bt, 8)) return true;
+	else
+		return false;
+}
 
 /* Up or "V" operation on a semaphore.  Increments SEMA's value
    and wakes up one thread of those waiting for SEMA, if any.
@@ -113,9 +124,14 @@ sema_up (struct semaphore *sema)
   ASSERT (sema != NULL);
 
   old_level = intr_disable ();
-  if (!list_empty (&sema->waiters)) 
-    thread_unblock (list_entry (list_pop_front (&sema->waiters),
-                                struct thread, elem));
+  if (!list_empty (&sema->waiters)){ 
+    list_sort(&sema->waiters, prior_compare, NULL);
+    struct list_elem *e = list_max(&sema->waiters, prior_compare, NULL);
+    list_remove(e);
+    thread_unblock(list_entry(e, struct thread, elem));
+//    thread_unblock (list_entry (list_pop_back (e, struct thread, elem));
+//                                struct thread, elem));
+  }
   sema->value++;
   intr_set_level (old_level);
 }
@@ -189,15 +205,29 @@ lock_init (struct lock *lock)
    interrupt handler.  This function may be called with
    interrupts disabled, but interrupts will be turned back on if
    we need to sleep. */
+
 void
 lock_acquire (struct lock *lock)
 {
+
   ASSERT (lock != NULL);
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
-
+  //look through donations
+  if(lock-> holder){
+	list_insert_ordered(&lock->holder->donators, &thread_current()->elem_donor, &prior_compare, NULL);
+	if(get_priority(thread_current(),8) <= get_priority(lock->holder, 8)){
+		thread_yield();
+	} 
+  }
   sema_down (&lock->semaphore);
   lock->holder = thread_current ();
+  struct list_elem* e = list_begin(&lock->semaphore.waiters); 
+  if(e != NULL){
+	  for(; e != list_end(&lock->semaphore.waiters); e = list_next(e)){
+		list_insert_ordered(&thread_current()->donators, e, &prior_compare, NULL);
+  	}
+  }
 }
 
 /* Tries to acquires LOCK and returns true if successful or false
@@ -230,7 +260,11 @@ lock_release (struct lock *lock)
 {
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
-
+//remove threads from donation list
+  struct list_elem *e = list_begin(&lock->holder->donators);
+  for(; e != list_end(&lock->holder->donators); e = list_next(e)){
+  	list_remove(e);
+  }
   lock->holder = NULL;
   sema_up (&lock->semaphore);
 }
