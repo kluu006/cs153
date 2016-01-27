@@ -209,6 +209,11 @@ timer_interrupt (struct intr_frame *args UNUSED)
 		if(t->wake_time <= current_ticks)
 		{
 			thread_unblock(t);
+			//struct thread *x = max_pri_helper();
+			//istruct thread *y = thread_current();
+			/*if(get_priority(x, 8) > get_priority(y, 8)){
+				thread_yield();
+			}*/
 			list_remove(&t->sleeping_elem);
 		}
 	}

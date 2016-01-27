@@ -215,6 +215,7 @@ thread_create (const char *name, int priority,
 
   /* Add to run queue. */
   thread_unblock (t);
+  t->fuckshit = priority;
   old_level = intr_disable();
   struct thread *y = list_entry (list_front(&ready_list), struct thread, elem);
   if(get_priority(y, 8) > get_priority(thread_current(), 8)){
@@ -256,7 +257,7 @@ max_compare (const struct list_elem *a,
 {
 	struct thread *at = list_entry(a, struct thread, elem);
 	struct thread *bt = list_entry(b, struct thread, elem);
-	if(at->priority < bt->priority) return true;
+	if(get_priority(at,8) < get_priority(bt,8)) return true;
 	else
 		return false;
 }
@@ -562,23 +563,31 @@ int get_priority(struct thread* t, int level){
    if(level <= 0){
      return max;
    }
-   struct list_elem *e = list_begin(&t->donators);
-   if(e == NULL){
-     return max;
+   //enum intr_level old_state; 
+   // old_state = intr_disable (); 
+   if(!list_empty(&t->donators)){
+   	//struct list_elem *e = list_begin(&t->donators);
+	struct list_elem *e;
+   	for (e = list_begin(&t->donators); e != list_end(&t->donators); e = list_next(e))
+     	{
+     		struct thread *d = list_entry (e, struct thread, elem_donor);
+     		int new_max = get_priority(d, level-1);
+     		if(max < new_max){
+       			max = new_max;
+     		}
+   	}
    }
-   for (; e != list_end(&t->donators); e = list_next(e))
-     {
-     struct thread *d = list_entry (e, struct thread, elem_donor);
-     int new_max = get_priority(d, level-1);
-     if(new_max > max){
-       max = new_max;
-     }
-   }
+   //intr_set_level(old_state);
    return max;
 }
 
 
-
+struct thread *
+max_pri_helper(){
+  struct list_elem *e = list_max(&ready_list, max_compare, NULL);
+  struct thread *t = list_entry(e, struct thread, elem);
+  return t;
+}
 /* Chooses and returns the next thread to be scheduled.  Should
    return a thread from the run queue, unless the run queue is
    empty.  (If the running thread can continue running, then it
@@ -590,9 +599,12 @@ next_thread_to_run (void)
   if (list_empty (&ready_list)){
     return idle_thread;
   }
+  enum intr_level old_state;
+  old_state = intr_disable();
   struct list_elem *e = list_max(&ready_list,max_compare,NULL);
   struct thread *t = list_entry (e, struct thread, elem);
   list_remove(e);
+  intr_set_level(old_state);
   return t;
 }
 
