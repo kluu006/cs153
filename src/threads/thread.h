@@ -88,7 +88,6 @@ struct thread
     char name[16];                      /* Name (for debugging purposes). */
     uint8_t *stack;                     /* Saved stack pointer. */
     int priority;                       /* Priority. */   
-    int fuckshit;
     struct list_elem allelem;           /* List element for all threads list. */
     struct list_elem elem_donor;
     struct list_elem sleeping_elem;
@@ -144,7 +143,8 @@ void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
-struct thread * max_pri_helper();
-int get_priority(struct thread *, int);
-
+//struct thread * max_pri_helper();
+//int get_priority(struct thread *, int);
+int donated_priority(struct thread *t, int level);
+static bool priority_compare(const struct list_elem *, const struct list_elem *, void *aux);
 #endif /* threads/thread.h */
