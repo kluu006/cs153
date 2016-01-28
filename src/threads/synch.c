@@ -331,6 +331,21 @@ cond_init (struct condition *cond)
    interrupt handler.  This function may be called with
    interrupts disabled, but interrupts will be turned back on if
    we need to sleep. */
+static bool
+sema_compare (const struct list_elem *a,
+		const struct list_elem *b,
+		void *aux UNUSED) 
+{
+	struct semaphore_elem *as = list_entry(a, struct semaphore_elem, elem);
+	struct semaphore_elem *bs = list_entry(b, struct semaphore_elem, elem);
+	if(list_empty(&as->semaphore.waiters)) return false;
+	if(list_empty(&bs->semaphore.waiters)) return true;
+	struct thread* at = list_entry(list_max(&as->semaphore.waiters, synch_compare, NULL), struct thread, elem);
+	struct thread* bt = list_entry(list_max(&bs->semaphore.waiters, synch_compare, NULL), struct thread, elem);
+	if(donated_priority(at,8) < donated_priority(bt,8)) return true;
+	else
+		return false;
+}
 void
 cond_wait (struct condition *cond, struct lock *lock) 
 {
@@ -363,9 +378,11 @@ cond_signal (struct condition *cond, struct lock *lock UNUSED)
   ASSERT (!intr_context ());
   ASSERT (lock_held_by_current_thread (lock));
 
-  if (!list_empty (&cond->waiters)) 
-    sema_up (&list_entry (list_pop_front (&cond->waiters),
-                          struct semaphore_elem, elem)->semaphore);
+  if (!list_empty (&cond->waiters)){
+    struct list_elem *e = list_max(&cond->waiters,sema_compare,NULL);
+    sema_up (&list_entry (e,  struct semaphore_elem, elem)->semaphore);
+	list_remove(e);
+  }
 }
 
 /* Wakes up all threads, if any, waiting on COND (protected by
