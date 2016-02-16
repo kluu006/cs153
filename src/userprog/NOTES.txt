@@ -1,0 +1,6 @@
+*eveywhere cmd_line of equiv is used in strtok_r replace with a copy, execept for in setup_stack_helper, this is so setup_stack_helper 
+gets the entire line without losing tokens to the other functions that reuire them
+*if load and process-execute need two differtent parts of cmd_line have exec hold onto the copy that is having token removed, not the original that way
+process_execute can get part 0 and load and get part 1
+*helper code for syscalls uses what i think is a thred element for maitaing a pointer to the parent and the child process maybe
+*make sure to validate user passed pointer for syscalls inside the handler

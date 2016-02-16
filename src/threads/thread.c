@@ -147,35 +147,6 @@ thread_print_stats (void)
           idle_ticks, kernel_ticks, user_ticks);
 }
 
-int donated_priority(struct thread *t, int level){
-  int max = t->priority;
-  if(level <= 0){
-    return max;
-  }
-  if(!list_empty(&t->donators)){
-    struct list_elem *e;
-    for(e = list_begin(&t->donators); e != list_end(&t->donators); e = list_next(e)){
-      struct thread *temp = list_entry(e, struct thread, elem_donor);
-      int check = donated_priority(temp, level - 1);
-      if(max < check){
-        max = check;
-      }
-    }
-  }
-  return max;
-}
-
-static bool
-priority_compare (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED) 
-{
-  struct thread *at = list_entry(a, struct thread, elem);
-  struct thread *bt = list_entry(b, struct thread, elem);
-  if(donated_priority(at,8) < donated_priority(bt,8)) return true;
-  else
-    return false;
-}
-
-
 /* Creates a new kernel thread named NAME with the given initial
    PRIORITY, which executes FUNCTION passing AUX as the argument,
    and adds it to the ready queue.  Returns the thread identifier
@@ -237,10 +208,7 @@ thread_create (const char *name, int priority,
 
   /* Add to run queue. */
   thread_unblock (t);
-  struct thread *max = list_entry(list_max(&ready_list, priority_compare, NULL),struct thread, elem);
-  if(donated_priority(max, 8) > donated_priority(thread_current(), 8)){
-    thread_yield();
-  }
+
   return tid;
 }
 
@@ -375,23 +343,14 @@ thread_foreach (thread_action_func *func, void *aux)
 void
 thread_set_priority (int new_priority) 
 {
-  //enum intr_level old_state;
   thread_current ()->priority = new_priority;
-  //try turning off interrupts
-  struct thread *max = list_entry(list_max(&ready_list, priority_compare, NULL), struct thread, elem);
-  if(!is_thread(max)){
-  	return;
-  }
-  if(donated_priority(thread_current(), 8) < donated_priority(max, 8)){
-    thread_yield();
-  }
 }
 
 /* Returns the current thread's priority. */
 int
 thread_get_priority (void) 
 {
-  return donated_priority(thread_current(), 8);
+  return thread_current ()->priority;
 }
 
 /* Sets the current thread's nice value to NICE. */
@@ -510,7 +469,6 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
-  list_init(&t->donators);
   list_push_back (&all_list, &t->allelem);
 }
 
@@ -537,10 +495,8 @@ next_thread_to_run (void)
 {
   if (list_empty (&ready_list))
     return idle_thread;
-  struct list_elem *e = list_max(&ready_list, priority_compare, NULL);
-  struct thread *t = list_entry(e, struct thread, elem);
-  list_remove(e);
-  return t;
+  else
+    return list_entry (list_pop_front (&ready_list), struct thread, elem);
 }
 
 /* Completes a thread switch by activating the new thread's page
@@ -605,7 +561,6 @@ schedule (void)
 
   ASSERT (intr_get_level () == INTR_OFF);
   ASSERT (cur->status != THREAD_RUNNING);
-
   ASSERT (is_thread (next));
 
   if (cur != next)

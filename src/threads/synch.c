@@ -101,18 +101,6 @@ sema_try_down (struct semaphore *sema)
   return success;
 }
 
-
-static bool
-synch_compare (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED) 
-{
-  struct thread *at = list_entry(a, struct thread, elem);
-  struct thread *bt = list_entry(b, struct thread, elem);
-  if(donated_priority(at,8) < donated_priority(bt,8)) return true;
-  else
-    return false;
-}
-
-
 /* Up or "V" operation on a semaphore.  Increments SEMA's value
    and wakes up one thread of those waiting for SEMA, if any.
 
@@ -125,19 +113,11 @@ sema_up (struct semaphore *sema)
   ASSERT (sema != NULL);
 
   old_level = intr_disable ();
-  if (!list_empty (&sema->waiters)){
-    //highest priority thread
-    struct thread *t = list_entry (list_max (&sema->waiters, synch_compare, NULL), struct thread, elem);
-    //removes unblocked thread from waiters list
-    list_remove(list_max (&sema->waiters, synch_compare, NULL));
-    //unblocks highest priority waiter
-    thread_unblock (t);
-    //thread_unblock (list_entry (list_pop_front (&sema->waiters), struct thread, elem));
-  }
+  if (!list_empty (&sema->waiters)) 
+    thread_unblock (list_entry (list_pop_front (&sema->waiters),
+                                struct thread, elem));
   sema->value++;
   intr_set_level (old_level);
-  //WHY DOES THIS WORK MORE?!?!
-  thread_yield();
 }
 
 static void sema_test_helper (void *sema_);
@@ -215,21 +195,9 @@ lock_acquire (struct lock *lock)
   ASSERT (lock != NULL);
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
-  //if a thread has control of the lock add the current thread
-  //to that threads donators
-  if(lock->holder != NULL){
-    list_push_back(&(lock->holder)->donators, &thread_current()->elem_donor);
-  }
+
   sema_down (&lock->semaphore);
   lock->holder = thread_current ();
-  //after the thread has acquired the lock transfer all previous
-  //lock holders donors to new holder
-  struct list_elem *e;
-  for(e = list_begin(&lock->semaphore.waiters); e != list_end(&lock->semaphore.waiters); e = list_next(e)){
-    //if this does not work try e=>thread=>thread->some_elem
-    struct thread *t = list_entry(e, struct thread, elem);
-    list_push_back(&thread_current()->donators, &t->elem_donor);
-  }
 }
 
 /* Tries to acquires LOCK and returns true if successful or false
@@ -263,23 +231,8 @@ lock_release (struct lock *lock)
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
 
-  //traverse donors
-  struct list_elem *e = list_begin(&thread_current()->donators);
-  //traverse waiters
-  struct list_elem *w;
-  //for every donor waiting on this specific lock
-  //remove them from lock's donators
-  for(w=list_begin(&(&lock->semaphore)->waiters); w != list_end(&(&lock->semaphore)->waiters);w = list_next(w) ){
-    struct thread *t = list_entry(w, struct thread, elem);
-    for(; list_entry(e, struct thread, elem_donor) != t; e = list_next(e)){}
-    list_remove(e);
-  }
-
   lock->holder = NULL;
   sema_up (&lock->semaphore);
-
-  //why does this work?
-  //thread_yield();
 }
 
 /* Returns true if the current thread holds LOCK, false

@@ -7,7 +7,6 @@
 #include "threads/interrupt.h"
 #include "threads/synch.h"
 #include "threads/thread.h"
-#include "list.h"
   
 /* See [8254] for hardware details of the 8254 timer chip. */
 
@@ -30,14 +29,12 @@ static bool too_many_loops (unsigned loops);
 static void busy_wait (int64_t loops);
 static void real_time_sleep (int64_t num, int32_t denom);
 static void real_time_delay (int64_t num, int32_t denom);
-static struct list sleep_list;
 
 /* Sets up the timer to interrupt TIMER_FREQ times per second,
    and registers the corresponding interrupt. */
 void
 timer_init (void) 
 {
-  list_init(&sleep_list);
   pit_configure_channel (0, 2, TIMER_FREQ);
   intr_register_ext (0x20, timer_interrupt, "8254 Timer");
 }
@@ -87,37 +84,16 @@ timer_elapsed (int64_t then)
   return timer_ticks () - then;
 }
 
-static bool
-comparator (const struct list_elem *a,
-                        const struct list_elem *b,
-			void *aux UNUSED) 
-{
-	struct thread *at = list_entry(a, struct thread, sleeping_elem);
-	struct thread *bt = list_entry(b, struct thread, sleeping_elem);
-	if(at->wake_time < bt->wake_time) return true;
-	else
-		return false;
-}
-
 /* Sleeps for approximately TICKS timer ticks.  Interrupts must
    be turned on. */
 void
 timer_sleep (int64_t ticks) 
 {
   int64_t start = timer_ticks ();
-  int64_t wake = ticks + start;
-  struct thread* sleeping_thread = thread_current();
-  sleeping_thread-> wake_time = wake;
+
   ASSERT (intr_get_level () == INTR_ON);
-  enum intr_level old_state;  
-  old_state = intr_disable (); 
-
-  //list_push_back(&sleep_list, &sleeping_thread->sleeping_elem);
-  list_insert_ordered(&sleep_list, &sleeping_thread->sleeping_elem, comparator, NULL);
-  ASSERT (!(list_empty(&sleep_list)));
-
-  thread_block();
-  intr_set_level(old_state);
+  while (timer_elapsed (start) < ticks) 
+    thread_yield ();
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -194,30 +170,8 @@ timer_print_stats (void)
 static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
-	  ticks++;
-	  thread_tick ();
-	enum intr_level old_state; 
-	old_state = intr_disable (); 
-
-	//for iterating
-	struct list_elem * e;
-	//current num of ticks
-	int64_t current_ticks = timer_ticks();
-	for(e = list_begin(&sleep_list); e != list_end(&sleep_list); e = list_next(e))
-	{
-		struct thread * t = list_entry(e, struct thread, sleeping_elem);
-		if(t->wake_time <= current_ticks)
-		{
-			thread_unblock(t);
-			//struct thread *x = max_pri_helper();
-			//istruct thread *y = thread_current();
-			/*if(get_priority(x, 8) > get_priority(y, 8)){
-				thread_yield();
-			}*/
-			list_remove(&t->sleeping_elem);
-		}
-	}
-	intr_set_level(old_state);
+  ticks++;
+  thread_tick ();
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
